@@ -25,7 +25,7 @@ end
 
 def check_branch
   # TODO : change this to use the Git class
-  rubocop(`git diff --name-only master`.split(/\s+/))
+  rubocop(`git diff --name-only master`.split(/\s+/).grep(/\.rb$/))
 end
 
 def check_files
