@@ -36,7 +36,7 @@ end
 
 def rubocop(files = [])
   return if files.empty?
-  puts `rubocop #{files.join(' ')} 2>/dev/null`
+  puts `rubocop --format simple #{files.join(' ')} 2>/dev/null`
 end
 
 def show_help
