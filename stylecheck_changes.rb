@@ -37,44 +37,55 @@ GIT_INSTALLER = 'brew install git'.freeze
 
 $options = {}
 
+def opt_set(opts, flags = [], description = '')
+  sym = flags.last.gsub(/^--/, '').tr('-', '_').gsub(/\s.*/, '').to_sym
+  opts.on(*[flags, description].flatten) { |o| $options[sym] = o }
+end
+
+def opts_banner
+  "StyleCheck Your Changes\n\n" \
+  'This script checks for changes to send to linters for ' \
+  "style validation.\n\n" \
+  "Usage: #{File.basename(__FILE__)} [options]"
+end
+
+def branch_opt(opts)
+  opts.on(
+    '-b [BRANCH]', '--branch [BRANCH]',
+    "Check files in the current branch vs another (defaults to #{MAIN_BRANCH})"
+  ) do |o|
+    $options[:check_branch] = true
+    $options[:vs_branch] = o || MAIN_BRANCH
+  end
+end
+
 def parse_opts
   OptionParser.new do |opts|
-    opts.banner = "StyleCheck Your Changes\n\n" \
-                  'This script checks for changes to send to linters for ' \
-                  "style validation.\n\n" \
-                  "Usage: #{File.basename(__FILE__)} [options]"
+    opts.banner = opts_banner
 
-    opts.on('-v', '--verbose', 'Run verbosely') { |v| $options[:verbose] = v }
-    opts.on('-t', '--test', 'Test mode') { |t| $options[:test] = t }
+    opt_set(opts, ['-v', '--verbose'], 'Run verbosely')
+    opt_set(opts, ['-t', '--test'], 'Test mode')
 
-    opts.on(
-      '-f [TYPE]', '--filetype [TYPE]',
+    opt_set(
+      opts, ['-f [TYPE]', '--file-type [TYPE]'],
       "Run lint checks on a specific file type (#{LINTERS.keys.join(', ')})"
-    ) { |f| $options[:type] = f }
+    )
 
-    opts.on(
-      '-b [BRANCH]', '--branch [BRANCH]',
-      'Check files in the current branch vs another ' \
-      "(defaults to #{MAIN_BRANCH})"
-    ) do |b|
-      $options[:check_branch] = true
-      $options[:vs_branch] = b || MAIN_BRANCH
-    end
+    branch_opt(opts)
 
-    opts.on(
-      '-a', '--auto-correct',
-      'Run linter auto-correct if available'
-    ) { |a| $options[:autocorrect] = a }
+    opt_set(opts, ['-a', '--auto-correct'], 'Run auto-correct if available')
 
-    opts.on('--run-installer', 'Run installers for missing linters') do |r|
-      $options[:run_installer] = r
-    end
+    opt_set(
+      opts, ['-i', '--run-installer'], 'Run installers for missing linters'
+    )
   end.parse!
+
+  puts $options.inspect if $options[:test]
 end
 
 def git_check
   return if bin_exists?(:git)
-  puts "git is not installed, please run 'brew install git'"
+  puts "git is not installed, please run '#{GIT_INSTALLER}'"
 
   if $options[:run_installer]
     puts 'Installing git...'
@@ -121,7 +132,7 @@ end
 
 def run_linter(linter = {}, files = [])
   opts = linter[:opts] || ''
-  opts += " #{linter[:autocorrect_opt]}" if $options[:autocorrect]
+  opts += " #{linter[:autocorrect_opt]}" if $options[:auto_correct]
   cmd = "#{linter[:bin]} #{opts} #{files.join(' ')} 2>/dev/null"
   puts "[CMD] #{cmd}" if $options[:test]
   puts `#{cmd}` unless files.empty? || $options[:test]
@@ -146,7 +157,7 @@ def run_checks
   files = $options[:check_branch] ? branch_files : local_files
 
   LINTERS.keys.each do |ext|
-    next if $options[:type] && $options[:type] != ext.to_s
+    next if $options[:file_type] && $options[:file_type] != ext.to_s
     run_check(ext, files)
   end
 end
