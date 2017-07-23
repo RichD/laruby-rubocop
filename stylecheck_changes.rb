@@ -35,6 +35,8 @@ MAIN_BRANCH = 'master'.freeze
 
 GIT_INSTALLER = 'brew install git'.freeze
 
+##########################################
+
 $options = {}
 
 def opt_set(opts, flags = [], description = '')
@@ -42,14 +44,21 @@ def opt_set(opts, flags = [], description = '')
   opts.on(*[flags, description].flatten) { |o| $options[sym] = o }
 end
 
-def opts_banner
-  "StyleCheck Your Changes\n\n" \
-  'This script checks for changes to send to linters for ' \
-  "style validation.\n\n" \
-  "Usage: #{File.basename(__FILE__)} [options]"
+def banner(opts)
+  opts.banner =
+    "StyleCheck Your Changes\n\n" \
+    'This script checks for changes to send to linters for ' \
+    "style validation.\n\n" \
+    "Linters: #{LINTERS.values.map { |l| l[:bin] }.join(', ')}\n\n" \
+    "Usage: #{File.basename(__FILE__)} [options]"
 end
 
-def branch_opt(opts)
+def scope_opts(opts)
+  opt_set(
+    opts, ['-f [TYPE]', '--file-type [TYPE]'],
+    "Run lint checks on a specific file type (#{LINTERS.keys.join(', ')})"
+  )
+
   opts.on(
     '-b [BRANCH]', '--branch [BRANCH]',
     "Check files in the current branch vs another (defaults to #{MAIN_BRANCH})"
@@ -57,31 +66,24 @@ def branch_opt(opts)
     $options[:check_branch] = true
     $options[:vs_branch] = o || MAIN_BRANCH
   end
+
+  opt_set(opts, ['-l', '--lines-only'], 'Only check changed lines')
 end
 
 def parse_opts
   OptionParser.new do |opts|
-    opts.banner = opts_banner
-
+    banner(opts)
     opt_set(opts, ['-v', '--verbose'], 'Run verbosely')
     opt_set(opts, ['-t', '--test'], 'Test mode')
-
-    opt_set(
-      opts, ['-f [TYPE]', '--file-type [TYPE]'],
-      "Run lint checks on a specific file type (#{LINTERS.keys.join(', ')})"
-    )
-
-    branch_opt(opts)
-
+    scope_opts(opts)
     opt_set(opts, ['-a', '--auto-correct'], 'Run auto-correct if available')
-
-    opt_set(
-      opts, ['-i', '--run-installer'], 'Run installers for missing linters'
-    )
+    opt_set(opts, ['-i', '--run-installer'], 'Run installers for linters')
   end.parse!
 
   puts $options.inspect if $options[:test]
 end
+
+################################################
 
 def git_check
   return if bin_exists?(:git)
