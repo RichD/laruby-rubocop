@@ -80,7 +80,7 @@ def parse_opts
     opt_set(opts, ['-i', '--run-installer'], 'Run installers for linters')
   end.parse!
 
-  puts $options.inspect if $options[:test]
+  puts '[OPTS] ' + $options.inspect if $options[:verbose]
 end
 
 ################################################
@@ -132,12 +132,73 @@ def handle_missing_linter(linter = {})
   end
 end
 
-def run_linter(linter = {}, files = [])
-  opts = linter[:opts] || ''
-  opts += " #{linter[:autocorrect_opt]}" if $options[:auto_correct]
+def added_file?(file)
+  !`git status -s #{file}`.match(/^\?\?/).nil?
+end
+
+def parse_changed(array, l)
+  return unless l =~ /^@@ -(.*?) \+(.*?) @@/
+  num, steps = Regexp.last_match[2].split(/,/)
+  num = num.to_i
+
+  (0..steps.to_i).to_a.each do
+    array << num
+    num += 1
+  end
+end
+
+def branch_lines(file)
+  line_numbers = []
+
+  `git diff -U0 #{$options[:vs_branch]} #{file} | grep "^\@\@"`
+    .split(/(\r|\n)+/).each { |l| parse_changed(line_numbers, l) }
+
+  line_numbers
+end
+
+def local_lines(file)
+  `git blame #{file} | grep -n '\^0\\{8\\} ' | cut -f1 -d:`
+    .split(/(\r|\n)+/).grep(/\S/).map(&:to_i)
+end
+
+def filter_lines(file, results)
+  line_results = []
+  lines = $options[:check_branch] ? branch_lines(file) : local_lines(file)
+  lines_hash = lines.each_with_object({}) { |l, hash| hash[l] = 0 }
+
+  results.split(/(\r|\n)+/).each do |l|
+    if l =~ /^(C|W):(\d+):/
+      num = Regexp.last_match(2).to_i
+      line_results << l if lines_hash.key?(num)
+    end
+  end
+
+  line_results.unshift("== #{file} ==") unless line_results.empty?
+  line_results
+end
+
+def lint_file_lines(linter, file, opts)
+  cmd = "#{linter[:bin]} #{opts} #{file} 2>/dev/null"
+  puts "[CMD] #{cmd}" && return if $options[:test]
+  results = `#{cmd}`
+  puts added_file?(file) ? results : filter_lines(file, results)
+end
+
+def lint_files(linter, opts, files)
   cmd = "#{linter[:bin]} #{opts} #{files.join(' ')} 2>/dev/null"
   puts "[CMD] #{cmd}" if $options[:test]
   puts `#{cmd}` unless files.empty? || $options[:test]
+end
+
+def run_linter(linter = {}, files = [])
+  opts = linter[:opts] || ''
+  opts += " #{linter[:autocorrect_opt]}" if $options[:auto_correct]
+
+  if $options[:lines_only] # one file at a time
+    files.each { |f| lint_file_lines(linter, f, opts) }
+  else # run bulk command
+    lint_files(linter, opts, files)
+  end
 end
 
 def run_check(ext, files = [])
@@ -156,11 +217,12 @@ def run_check(ext, files = [])
 end
 
 def run_checks
-  files = $options[:check_branch] ? branch_files : local_files
+  files = local_files
+  files << branch_files if $options[:check_branch]
 
   LINTERS.keys.each do |ext|
     next if $options[:file_type] && $options[:file_type] != ext.to_s
-    run_check(ext, files)
+    run_check(ext, files.flatten.uniq)
   end
 end
 
