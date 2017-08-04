@@ -164,8 +164,9 @@ def branch_lines(file)
 end
 
 def local_lines(file)
-  `git blame #{file} | grep -n '\^0\\{8\\} ' | cut -f1 -d:`
-    .split(/(\r|\n)+/).grep(/\S/).map(&:to_i)
+  `git blame #{file}`.split(/\n/)
+                     .grep(/^0{8}/)
+                     .map { |l| l.match(/.*?(\d+)\)/)[1].to_i }
 end
 
 def lines_hash(file)
@@ -178,11 +179,11 @@ def filter_lines(file, results)
   line_results = []
   lines = lines_hash(file)
 
-  results.split(/(\r|\n)+/).each do |l|
-    if l =~ /^[C,W]:(\d+):/ # TODO: put this regex in the LINTERS hash
-      num = Regexp.last_match(1).to_i
-      line_results << l if lines.key?(num)
-    end
+  results.split(/\n/).each do |l|
+    # TODO: put this regex in the LINTERS hash
+    next unless l =~ /^[C,W]:\s+(\d+)/
+    num = Regexp.last_match(1).to_i
+    line_results << l if lines.key?(num)
   end
 
   line_results.unshift("== #{file} ==") unless line_results.empty?
@@ -204,11 +205,11 @@ end
 
 def run_linter(linter = {}, files = [])
   opts = linter[:opts] || ''
-  opts += " #{linter[:autocorrect_opt]}" if $options[:auto_correct]
 
   if $options[:lines_only] # one file at a time
     files.each { |f| lint_file_lines(linter, f, opts) }
   else # run bulk command
+    opts += " #{linter[:autocorrect_opt]}" if $options[:auto_correct]
     lint_files(linter, opts, files)
   end
 end
