@@ -16,20 +16,24 @@ LINTERS = {
     opts: '--format simple -D',
     autocorrect_opt: '-a',
     installer: 'gem install rubocop',
-    ext: %w[rb rake]
+    ext: %w[rb rake],
+    line_regex: /^[C,W]:\s+(\d+)/
   },
   js: {
     bin: 'jshint',
-    installer: 'brew install node; npm install -g jshint'
+    installer: 'brew install node; npm install -g jshint',
+    line_regex: /^.*?: line (\d+)/
   },
   haml: {
     bin: 'haml-lint',
-    installer: 'gem install haml-lint'
+    installer: 'gem install haml-lint',
+    line_regex: /^.*?:(\d+)/
   },
-  scss: {
+  css: {
     bin: 'scss-lint',
     installer: 'gem install scss_lint',
-    ext: %w[css scss sass less]
+    ext: %w[css scss sass less],
+    line_regex: /^.*?:(\d+)/
   }
 }.freeze
 
@@ -175,13 +179,12 @@ def lines_hash(file)
   lines.flatten.each_with_object({}) { |l, hash| hash[l] = 0 }
 end
 
-def filter_lines(file, results)
+def filter_lines(linter, file, results)
   line_results = []
   lines = lines_hash(file)
 
   results.split(/\n/).each do |l|
-    # TODO: put this regex in the LINTERS hash
-    next unless l =~ /^[C,W]:\s+(\d+)/
+    next unless l =~ linter[:line_regex]
     num = Regexp.last_match(1).to_i
     line_results << l if lines.key?(num)
   end
@@ -194,7 +197,7 @@ def lint_file_lines(linter, file, opts)
   cmd = "#{linter[:bin]} #{opts} #{file} 2>/dev/null"
   puts "[CMD] #{cmd}" && return if $options[:test]
   results = `#{cmd}`
-  puts added_file?(file) ? results : filter_lines(file, results)
+  puts added_file?(file) ? results : filter_lines(linter, file, results)
 end
 
 def lint_files(linter, opts, files)
@@ -206,7 +209,7 @@ end
 def run_linter(linter = {}, files = [])
   opts = linter[:opts] || ''
 
-  if $options[:lines_only] # one file at a time
+  if $options[:lines_only] && linter.key?(:line_regex) # one file at a time
     files.each { |f| lint_file_lines(linter, f, opts) }
   else # run bulk command
     opts += " #{linter[:autocorrect_opt]}" if $options[:auto_correct]
