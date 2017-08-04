@@ -15,7 +15,8 @@ LINTERS = {
     bin: 'rubocop',
     opts: '--format simple -D',
     autocorrect_opt: '-a',
-    installer: 'gem install rubocop'
+    installer: 'gem install rubocop',
+    ext: %w[rb rake]
   },
   js: {
     bin: 'jshint',
@@ -27,7 +28,8 @@ LINTERS = {
   },
   scss: {
     bin: 'scss-lint',
-    installer: 'gem install scss_lint'
+    installer: 'gem install scss_lint',
+    ext: %w[css scss sass less]
   }
 }.freeze
 
@@ -110,9 +112,14 @@ def bin_exists?(bin)
   `which #{bin}` != ''
 end
 
-def file_match(ext, files = [])
-  matched_files = files.grep(/\.#{ext}$/)
+def match_files(ext, files)
+  linter = LINTERS[ext]
+  exts = linter.key?(:ext) ? linter[:ext] : [ext]
+  exts.map { |e| files.grep(/\.#{e}$/) }.flatten
+end
 
+def file_match(ext, files = [])
+  matched_files = match_files(ext, files)
   puts "Found #{matched_files.length} #{ext} file(s)" if
     $options[:test] || $options[:verbose]
 
@@ -161,15 +168,20 @@ def local_lines(file)
     .split(/(\r|\n)+/).grep(/\S/).map(&:to_i)
 end
 
+def lines_hash(file)
+  lines = local_lines(file)
+  lines << branch_lines(file) if $options[:check_branch]
+  lines.flatten.each_with_object({}) { |l, hash| hash[l] = 0 }
+end
+
 def filter_lines(file, results)
   line_results = []
-  lines = $options[:check_branch] ? branch_lines(file) : local_lines(file)
-  lines_hash = lines.each_with_object({}) { |l, hash| hash[l] = 0 }
+  lines = lines_hash(file)
 
   results.split(/(\r|\n)+/).each do |l|
-    if l =~ /^(C|W):(\d+):/
-      num = Regexp.last_match(2).to_i
-      line_results << l if lines_hash.key?(num)
+    if l =~ /^[C,W]:(\d+):/ # TODO: put this regex in the LINTERS hash
+      num = Regexp.last_match(1).to_i
+      line_results << l if lines.key?(num)
     end
   end
 
